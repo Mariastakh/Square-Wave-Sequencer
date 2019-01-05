@@ -9,10 +9,10 @@
 #pragma once
 
 #include "maximilian.h"
-#include "primeCalculator.hpp"
+#include "scalesBank.hpp"
 #include "../JuceLibraryCode/JuceHeader.h"
 
-// Look and Feel Class:
+// Custom Juce Look and Feel class for the Rotary Sliders:
 class OtherLookAndFeel : public LookAndFeel_V4
 {
 public:
@@ -26,8 +26,6 @@ public:
 
 	void drawRotarySlider(Graphics& g, int x, int y, int width, int height, float sliderPos, const float rotaryStartAngle, const float rotaryEndAngle, Slider& slider) override
 	{
-		// JUCE code:
-
 		auto outline = slider.findColour(Slider::rotarySliderOutlineColourId);
 		auto fill = slider.findColour(Slider::rotarySliderFillColourId);
 
@@ -38,7 +36,7 @@ public:
 		auto lineW = jmin(8.0f, rad);
 		auto arcRadius = radius - lineW * 0.5f;
 
-		// my circle:
+		// Circle:
 		float centreX = x + width * 0.5f;
 		float centreY = y + height * 0.5f;
 		float rx = centreX - radius;
@@ -48,8 +46,7 @@ public:
 		g.setColour(Colours::whitesmoke);
 		g.fillEllipse(rx, ry, rw, rw);
 
-		// my small circle:
-		// draw a smaller filled circle:
+		// Smaller filled circle:
 		float rx2 = centreX - (radius / 2);
 		float ry2 = centreY - (radius / 2);
 		// fill:
@@ -102,8 +99,6 @@ public:
 			g.strokePath(valueArc, PathStrokeType(10, PathStrokeType::beveled, PathStrokeType::butt));
 		}
 
-		//if (slider.isEnabled())
-		//{
 		Path valueArc;
 		valueArc.addCentredArc(width / 2,
 			height / 2,
@@ -116,9 +111,8 @@ public:
 
 		g.setColour(fill);
 		g.strokePath(valueArc, PathStrokeType(5, PathStrokeType::mitered, PathStrokeType::butt));
-		//}
 
-		// my dial:
+		// Dial:
 		float angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 		Path p;
 		float pointerLength = radius * 0.53f;
@@ -134,10 +128,6 @@ public:
 };
 
 //==============================================================================
-/*
-    This component lives inside our window, and this is where you should put all
-    your controls and content.
-*/
 class MainComponent : public AudioAppComponent, private Timer, public Button::Listener, public::Slider::Listener
 {
 public:
