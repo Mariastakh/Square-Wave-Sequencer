@@ -1,16 +1,12 @@
-/*
-  ==============================================================================
-
-    This file was auto-generated!
-
-  ==============================================================================
-*/
-
 #include "MainComponent.h"
 //==============================================================================
 MainComponent::MainComponent()
 {
+	// Start the timer - this will call the timerCallback function
+	// which will refresh the oscilloscope graphics:
 	startTimerHz(30);
+
+	// Envelopes, resize and initialise:
 	ADSR.resize(5);
 	ADSRout.resize(5);
 	for (int i = 0; i < 5; i++)
@@ -20,12 +16,50 @@ MainComponent::MainComponent()
 		ADSR[i].setSustain(2000);
 		ADSR[i].setRelease(2000);
 		ADSR[i].trigger = 0;
-
 		ADSRout[i] = 0;
 	}
 
-	graphicSize = 512;
-	bigGraphicSize = graphicSize * 6;
+	//====== MIDI: ======
+	chosenNote.resize(5);
+	midiMessages.resize(5);
+	for (int i = 0; i < 5; ++i)
+	{
+		chosenNote[i] = 9;
+		// initialise midiMessages array with a noteOn event, 0 velocity 
+		midiMessages[i] = MidiMessage::noteOn(1, 50, (uint8)0);
+
+	}
+
+	//=== Midi input Combo Box: ===
+	// Let's user choose which device to output MIDI to:
+	addAndMakeVisible(midiOutputList);
+	midiOutputList.setTextWhenNoChoicesAvailable("No MIDI Outputs Enabled");
+	MidiOutput::getDevices();
+	midiOutput = MidiOutput::openDevice(0);
+	midiOutputList.addItemList(MidiOutput::getDevices(), 1);
+	midiOutputList.onChange = [this]() {midiOutput = MidiOutput::openDevice(midiOutputList.getSelectedItemIndex()); };
+
+	//=== Key transposition Combo Box: ===
+	// Let's the user choose a key in which the 
+	// notes will be played: 
+	addAndMakeVisible(keyOptions);
+	keyOptions.setTextWhenNoChoicesAvailable("Key");
+	keyOptions.addItemList(scaleRef.keyNamesMajor, 1); //string array
+	keyOptions.onChange = [this]() { styleMenuChanged();
+	};
+
+	// Array where the selected key values will be stored:
+	key.resize(7);
+	for (int i = 0; i < 7; i++)
+	{
+		key[i] = 0;
+	}
+
+	//====== Oscilloscope Graphics: ==================
+	// The audio buffer 512 in length, however we want
+	// smoother graphics, so we're going to keep sampling
+	// the audio buffer to accumulate several buffers' worth
+	// of data, hence the sineBuffer (512), and bigSineBuffer:
 	sineBuffer.resize(graphicSize);
 	bigSineBuffer.resize(bigGraphicSize);
 	for (int i = 0; i < graphicSize; i++)
@@ -38,111 +72,7 @@ MainComponent::MainComponent()
 		bigSineBuffer[i] = 0;
 	}
 
-	chosenNote.resize(5);
-	for (int i = 0; i < 5; ++i)
-	{
-		chosenNote[i] = 9;
-	}
-	// midi input disable:
-	//auto midiInputs = MidiInput::getDevices();
-	//setMidiInput(0);
-	// resize the button vector:
-	//noteButtons.resize(5);
-	On.resize(5);
-	for (int i = 0; i < 5; ++i)
-	{
-		//noteButtons[i].resize(7);
-		On[i].resize(7);
-	}
-	for (int i = 0; i < 5; i++) // columns
-	{
-		for (int j = 0; j < 7; j++)
-		{
-			On[i][j] = false;
-		}
-	}
-
-	//==========================
-	// Note Buttons
-	//==========================
-	for (int i = 0; i < 7; i++){
-		auto r1 = new TextButton();
-		//r1->setLookAndFeel(&otherLookAndFeel);
-		r1->setButtonText("1");
-		r1->setColour(TextButton::buttonOnColourId, Colours::darkorange);
-		//r1->setColour(TextButton::buttonColourId, Colours::blue);
-		r1->setClickingTogglesState(true);
-		addAndMakeVisible(buttonsRow1.add(r1));
-		buttonsRow1[i]->addListener(this);
-		
-		//
-		auto r2 = new TextButton();
-		r2->setLookAndFeel(&otherLookAndFeel);
-		r2->setButtonText("2");
-		r2->setColour(TextButton::buttonOnColourId, Colours::darkorange);
-		r2->setClickingTogglesState(true);
-		addAndMakeVisible(buttonsRow2.add(r2));	
-		buttonsRow2[i]->addListener(this);
-
-		auto r3 = new TextButton();
-		r3->setLookAndFeel(&otherLookAndFeel);
-		r3->setButtonText("3");
-		r3->setColour(TextButton::buttonOnColourId, Colours::darkorange);
-		r3->setClickingTogglesState(true);
-		addAndMakeVisible(buttonsRow3.add(r3));
-		buttonsRow3[i]->addListener(this);
-
-		auto r4 = new TextButton();
-		r4->setLookAndFeel(&otherLookAndFeel);
-		r4->setButtonText("4");
-		r4->setColour(TextButton::buttonOnColourId, Colours::darkorange);
-		r4->setClickingTogglesState(true);
-		addAndMakeVisible(buttonsRow4.add(r4));
-		buttonsRow4[i]->addListener(this);
-
-		auto r5 = new TextButton();
-		r5->setLookAndFeel(&otherLookAndFeel);
-		r5->setButtonText("5");
-		r5->setColour(TextButton::buttonOnColourId, Colours::darkorange);
-		r5->setClickingTogglesState(true);
-		addAndMakeVisible(buttonsRow5.add(r5));
-		buttonsRow5[i]->addListener(this);
-	}
-	//======================================
-	//==========================
-	for (int i = 0; i < 5; i++) {
-		Slider* t = new Slider();
-		//
-		t->setSliderStyle(Slider::LinearVertical);
-		t->setRange(-24, 24, 12);
-		t->setTextBoxStyle(Slider::TextBoxBelow, false, 100, 20);
-		t->setColour(Slider::textBoxTextColourId, Colours::black);
-		t->setColour(Slider::textBoxOutlineColourId, Colours::transparentWhite);
-		//t.onValueChange = [this] { transpose_1_by = transpose_1.getValue(); };
-		t->setValue(0);
-		//
-		addAndMakeVisible(t_sliders.add(t));
-		t_sliders[i]->addListener(this);
-	}
-	// MIDI things:
-	// Array of Midi messgaes for individual velocity control via envelopes:
-	midiMessages.resize(5);
-	velocities.resize(5);
-
-
-	addAndMakeVisible(midiOutputList);
-
-	midiOutputList.setTextWhenNoChoicesAvailable("No MIDI Outputs Enabled");
-	MidiOutput::getDevices();
-	midiOutput = MidiOutput::openDevice(0);
-	midiOutputList.addItemList(MidiOutput::getDevices(), 1);
-
-	midiOutputList.onChange = [this]() {midiOutput = MidiOutput::openDevice(midiOutputList.getSelectedItemIndex()); };
-
-	//messageOn = MidiMessage::noteOn(1, 50, (uint8)0);
-
-	//=====
-	// Frequency Sliders
+	//==== Frequency Sliders ====
 	freq1.setSliderStyle(Slider::RotaryVerticalDrag);
 	freq1.setRange(0.0, 1.0);
 	freq1.setTextBoxStyle(Slider::TextBoxBelow, false, 100, 20);
@@ -173,7 +103,9 @@ MainComponent::MainComponent()
 	freq3.setLookAndFeel(&otherLookAndFeel);
 	addAndMakeVisible(freq3);
 	
-	// Slider to move all three frequency slider values equally:
+	// Global Frequency increase and decrease slider:
+	// For times when we want to equally increase or decrease
+	// the speed of the pattern while keeping the original form:
 	move_all.setSliderStyle(Slider::RotaryVerticalDrag);
 	move_all.setRange(0.1, 3, 0.1);
 	move_all.setTextBoxStyle(Slider::TextBoxBelow, false, 100, 20);
@@ -193,33 +125,68 @@ MainComponent::MainComponent()
 	envelopeLength.setValue(8000);
 	addAndMakeVisible(envelopeLength);
 
-	// initialise midiMessages array with a noteOn event, 0 velocity 
-	for (int i = 0; i < 5; i++)
-	{
-		midiMessages[i] = MidiMessage::noteOn(1, 50, (uint8) 0);
-		velocities[i] = 100;
+	//======== Transposition Sliders: ===============
+	for (int i = 0; i < 5; i++) {
+		Slider* t = new Slider();
+		//
+		t->setSliderStyle(Slider::LinearVertical);
+		t->setRange(-24, 24, 12);
+		t->setTextBoxStyle(Slider::TextBoxBelow, false, 100, 20);
+		t->setColour(Slider::textBoxTextColourId, Colours::black);
+		t->setColour(Slider::textBoxOutlineColourId, Colours::transparentWhite);
+		t->setValue(0);
+		addAndMakeVisible(t_sliders.add(t));
+		t_sliders[i]->addListener(this);
 	}
 
-	// Key transposition Combo Box:
-	addAndMakeVisible(keyOptions);
+	//=== Sequencer Grid Buttons ====
+	for (int i = 0; i < 7; i++) {
+		auto r1 = new TextButton();
+		//r1->setLookAndFeel(&otherLookAndFeel);
+		r1->setButtonText("1");
+		r1->setColour(TextButton::buttonOnColourId, Colours::darkorange);
+		//r1->setColour(TextButton::buttonColourId, Colours::blue);
+		r1->setClickingTogglesState(true);
+		addAndMakeVisible(buttonsRow1.add(r1));
+		buttonsRow1[i]->addListener(this);
 
-	keyOptions.setTextWhenNoChoicesAvailable("Key");
-	keyOptions.addItemList(scaleRef.keyNamesMajor,1); //string array
-	keyOptions.onChange = [this]() { styleMenuChanged();
-	// scaleRef.scalesMajor[keyOptions.getSelectedItemIndex()];
-	};
-	key.resize(7);
-	for (int i = 0; i < 7; i++) 
-	{
-		key[i] = 0;
+		//
+		auto r2 = new TextButton();
+		r2->setLookAndFeel(&otherLookAndFeel);
+		r2->setButtonText("2");
+		r2->setColour(TextButton::buttonOnColourId, Colours::darkorange);
+		r2->setClickingTogglesState(true);
+		addAndMakeVisible(buttonsRow2.add(r2));
+		buttonsRow2[i]->addListener(this);
+
+		auto r3 = new TextButton();
+		r3->setLookAndFeel(&otherLookAndFeel);
+		r3->setButtonText("3");
+		r3->setColour(TextButton::buttonOnColourId, Colours::darkorange);
+		r3->setClickingTogglesState(true);
+		addAndMakeVisible(buttonsRow3.add(r3));
+		buttonsRow3[i]->addListener(this);
+
+		auto r4 = new TextButton();
+		r4->setLookAndFeel(&otherLookAndFeel);
+		r4->setButtonText("4");
+		r4->setColour(TextButton::buttonOnColourId, Colours::darkorange);
+		r4->setClickingTogglesState(true);
+		addAndMakeVisible(buttonsRow4.add(r4));
+		buttonsRow4[i]->addListener(this);
+
+		auto r5 = new TextButton();
+		r5->setLookAndFeel(&otherLookAndFeel);
+		r5->setButtonText("5");
+		r5->setColour(TextButton::buttonOnColourId, Colours::darkorange);
+		r5->setClickingTogglesState(true);
+		addAndMakeVisible(buttonsRow5.add(r5));
+		buttonsRow5[i]->addListener(this);
 	}
-	//
-	// Make sure you set the size of the component after
-	// you add any child components.
+	//======================================
+
 	setSize(800, 600);
-
-    // specify the number of input and output channels that we want to open
-    setAudioChannels (2, 2);
+    setAudioChannels (0, 2);
 }
 
 MainComponent::~MainComponent()
@@ -231,14 +198,6 @@ MainComponent::~MainComponent()
 //==============================================================================
 void MainComponent::prepareToPlay (int samplesPerBlockExpected, double sampleRate)
 {
-    // This function will be called when the audio device is started, or when
-    // its settings (i.e. sample rate, block size, etc) are changed.
-
-    // You can use this function to initialise any resources you might need,
-    // but be careful - it will be called on the audio thread, not the GUI thread.
-
-    // For more details, see the help for AudioProcessor::prepareToPlay()
-
 }
 
 void MainComponent::getNextAudioBlock (const AudioSourceChannelInfo& bufferToFill)
@@ -250,74 +209,55 @@ void MainComponent::getNextAudioBlock (const AudioSourceChannelInfo& bufferToFil
 	// The Audio Loop:
 	for (int sample = 0; sample < bufferToFill.numSamples; sample++)
 	{
+		// Assingn the oscillator objects to Square wave generators, and store the current value:
+		double square1 = (osc1.square(f1) + 1) / 2;
+		double square2 = (osc2.square(f2) + 1) / 2;
+		double square3 = (osc3.square(f3) + 1) / 2;
 
-		double square1 = (osc2.square(f1) + 1) / 2;
-		double square2 = (osc3.square(f2) + 1) / 2;
-		double square3 = (osc6.square(f3) + 1) / 2;
-
-		//double pulse1 = (osc7.pulse(f1, 0.1) + 1) / 2;
-		//double pulse2 = (osc8.pulse(f2, 0.1) + 1) / 2;
-		//double pulse3 = (osc9.pulse(f3, 0.1) + 1) / 2;
-
+		// If the oscillator is turned off, make sure it is equal to 0
 		if (f1 == 0.0) {
-			//pulse1 = 0;
-			square1 = 0;
+			square1 = 0.;
 		}
 		if (f2 == 0.0) {
-			//pulse2 = 0;
-			square2 = 0;
+			square2 = 0.;
 		}
 		if (f3 == 0.0) {
-			//pulse3 = 0;
-			square3 = 0;
+			square3 = 0.;
 		}
 
-		// double sum = (square1+square2+square3)*0.3;
+		// Add up the square waves: 
 		double sum = (square1 + square2 + square3);
-		//Logger::outputDebugString(std::to_string(sum));
-		//std::cout << sum<<  std::endl;
+		
+		// Add the current amplitde to the graphics buffer, and increment the index of the graphics buffer:
 		sineBuffer[index] = sum;
 		index += 1;
+		// Wrap around:
 		if (index >= graphicSize) {
 			index = 0;
 		}
 
-		// if the value is zero, nothing should play
-		if (sum == 0.0) //(time + sample) % noteDuration == 0
-		{
-			// don't do anything
-
-		}
-
-		// if the value has changed and its not zero then we are at a new plateau
-		if (sum != previous_sum && sum != 0.0)// sum == 0.0
+		// If the value has changed and its not zero then we are at a new plateau
+		if (sum != previous_sum && sum != 0.0)
 		{
 			bottomReached = true;
 		}
 
-		// if we have reached a plateau then set off a note-on event once: 
-		if (bottomReached == true) //sum == previous_sum && 
+		// if we have reached a plateau then set off a note-on event once, 
+		// but turn off bottomReached immediately so that no more note-on 
+		// events are triggered:
+		if (bottomReached == true)
 		{
-			// turn off current note:
-			// we only do this for monophonic playback:
-			if (mono == true)
-			{
-				//MidiMessage messageOff = MidiMessage::noteOff(messageOn.getChannel(), messageOn.getNoteNumber());
-				//messageOff.setTimeStamp(time);
-				//midiOutput->sendMessageNow(messageOff);
-			}
-			//====================
 			playNote = true;
 			bottomReached = false;
 
 		}
 
-	
-		
+		// Update the envelopes for each note:
 		for (int i = 0; i < 5; i++)
 		{
 			ADSRout[i] = ADSR[i].adsr(1., ADSR[i].trigger);
 		
+			// If the envelope is off and the note is also off, stop the note from playing:
 			if (ADSRout[i] <= 0.1 && noteAlreadyOff[i] == false)
 			{
 				midiMessages[i].noteOff(midiMessages[i].getChannel(), midiMessages[i].getNoteNumber());
@@ -328,44 +268,54 @@ void MainComponent::getNextAudioBlock (const AudioSourceChannelInfo& bufferToFil
 			}
 		}
 
-		// output
+		//======= The Midi output: ========
+		// If a midi note has been triggered, then go through every midi object in the sequencer (5 in total)
 		if (playNote == true)
 		{
+			// This will store the value of the note to be played:
 			int whichNote = 0;
+
+			// If its the first column in the sequencer:
 			if (playNoteIndex == 0)
 			{
-				// Turn off the currently playing note:
+				// Turn off the currently playing note if it isn't already off:
 				if (noteAlreadyOff[0] == false)
 				{
 				midiMessages[0].noteOff(midiMessages[0].getChannel(), midiMessages[0].getNoteNumber());
 				midiMessages[0].setTimeStamp(time);
 				midiOutput->sendMessageNow(midiMessages[0]);
 				}
-				//===
+
 				// Reset the envelope trigger:
 				ADSR[0].trigger = 1;
 				ADSRout[0] = ADSR[0].adsr(1., ADSR[0].trigger);
-				//Logger::outputDebugString(std::to_string(ADSRout[0]));
+				
 				if (skipNote[0] == true)
 				{
-
+					// Don't go sending any notes.
 				}
 				else {
 					for (int i = 0; i < 7; i++)
 					{
+						// if the note has been selected on the sequencer:
 						if (chosenNote[0] == i)
 						{
+							// Assign it to the corresponding note in the key
 							whichNote = key[i];
+							// Set the midiMessage to the key:
+							// Setting the note number and velocity
+							// in the noteOn() function caused unpredictable behaviour,
+							// or no assignment, so they are explicitly set using
+							// setNoteNumber() and setVelocity():
 							midiMessages[0].noteOn(1, 0, (uint8)100); //(unit8)100
 							midiMessages[0].setNoteNumber(key[i] + transposeBy[0]);
-							Logger::outputDebugString(std::to_string(key[i]));
 							midiMessages[0].setVelocity(1);
-							//Logger::outputDebugString("Note 1: ");
-							Logger::outputDebugString(std::to_string(midiMessages[0].getNoteNumber()));
-							midiMessages[0].setTimeStamp(time);
+							//midiMessages[0].setTimeStamp(time);
+							// Send the message:
 							midiOutput->sendMessageNow(midiMessages[0]);
+							// Set envelope trigger to 0, so it doesn't retrigger:
 							ADSR[0].trigger = 0;
-							firstLoop = false;
+							// The note isn't off anymore:
 							noteAlreadyOff[0] = false;
 						}
 					}
@@ -373,20 +323,17 @@ void MainComponent::getNextAudioBlock (const AudioSourceChannelInfo& bufferToFil
 
 			}
 			
-			if (playNoteIndex == 1)//58, 60, 48, 51, 53, 54, 55,
+			// If its the second column in the sequencer:
+			if (playNoteIndex == 1)
 			{
-				// Turn off the currently playing note:
 				if (noteAlreadyOff[1] == false)
 				{
 					midiMessages[1].noteOff(midiMessages[1].getChannel(), midiMessages[1].getNoteNumber());
 					midiMessages[1].setTimeStamp(time);
 					midiOutput->sendMessageNow(midiMessages[1]);
 				}
-				//===
-				// Reset the envelope trigger:
 				ADSR[1].trigger = 1;
 				ADSRout[1] = ADSR[1].adsr(1., ADSR[1].trigger);
-				//Logger::outputDebugString(std::to_string(ADSRout[1]));
 				if (skipNote[1] == true)
 				{
 
@@ -397,35 +344,30 @@ void MainComponent::getNextAudioBlock (const AudioSourceChannelInfo& bufferToFil
 						if (chosenNote[1] == i)
 						{
 							whichNote = key[i];
-							midiMessages[1].noteOn(1, 0, (uint8)100); //(unit8)100
+							midiMessages[1].noteOn(1, 0, (uint8)100); 
 							midiMessages[1].setNoteNumber(key[i] + transposeBy[1]);
-							Logger::outputDebugString(std::to_string(key[i]));
 							midiMessages[1].setVelocity(1);
-							//Logger::outputDebugString("Note 1: ");
-							Logger::outputDebugString(std::to_string(midiMessages[1].getNoteNumber()));
 							midiMessages[1].setTimeStamp(time);
 							midiOutput->sendMessageNow(midiMessages[1]);
 							ADSR[1].trigger = 0;
-							firstLoop = false;
 							noteAlreadyOff[1] = false;
 						}
 					}
 				}
 			}
+
+			// If its the third column in the sequencer:
 			if (playNoteIndex == 2)
 			{
-				// Turn off the currently playing note:
 				if (noteAlreadyOff[2] == false)
 				{
 					midiMessages[2].noteOff(midiMessages[2].getChannel(), midiMessages[2].getNoteNumber());
 					midiMessages[2].setTimeStamp(time);
 					midiOutput->sendMessageNow(midiMessages[2]);
 				}
-				//===
-				// Reset the envelope trigger:
 				ADSR[2].trigger = 1;
 				ADSRout[2] = ADSR[2].adsr(1., ADSR[2].trigger);
-				//Logger::outputDebugString(std::to_string(ADSRout[2]));
+
 				if (skipNote[2] == true)
 				{
 
@@ -436,32 +378,27 @@ void MainComponent::getNextAudioBlock (const AudioSourceChannelInfo& bufferToFil
 						if (chosenNote[2] == i)
 						{
 							whichNote = key[i];
-							midiMessages[2].noteOn(1, 0, (uint8)100); //(unit8)100
+							midiMessages[2].noteOn(1, 0, (uint8)100);
 							midiMessages[2].setNoteNumber(key[i] + transposeBy[2]);
-							Logger::outputDebugString(std::to_string(key[i]));
 							midiMessages[2].setVelocity(1);
-							//Logger::outputDebugString("Note 1: ");
-							Logger::outputDebugString(std::to_string(midiMessages[2].getNoteNumber()));
 							midiMessages[2].setTimeStamp(time);
 							midiOutput->sendMessageNow(midiMessages[2]);
 							ADSR[2].trigger = 0;
-							firstLoop = false;
 							noteAlreadyOff[2] = false;
 						}
 					}
 				}
 			}
+
+			// If its the fourth column in the sequencer:
 			if (playNoteIndex == 3)
 			{
-				// Turn off the currently playing note:
 				if (noteAlreadyOff[3] == false)
 				{
 					midiMessages[3].noteOff(midiMessages[3].getChannel(), midiMessages[3].getNoteNumber());
 					midiMessages[3].setTimeStamp(time);
 					midiOutput->sendMessageNow(midiMessages[3]);
 				}
-				//===
-				// Reset the envelope trigger:
 				ADSR[3].trigger = 1;
 				ADSRout[3] = ADSR[3].adsr(1., ADSR[3].trigger);
 
@@ -470,62 +407,49 @@ void MainComponent::getNextAudioBlock (const AudioSourceChannelInfo& bufferToFil
 					
 				}
 				else {
-					//Logger::outputDebugString(std::to_string(ADSRout[3]));
 					for (int i = 0; i < 7; i++)
 					{
 						if (chosenNote[3] == i)
 						{
 							whichNote = key[i];
-							midiMessages[3].noteOn(1, 0, (uint8)100); //(unit8)100
+							midiMessages[3].noteOn(1, 0, (uint8)100);
 							midiMessages[3].setNoteNumber(key[i] + transposeBy[3]);
-							Logger::outputDebugString(std::to_string(key[i]));
 							midiMessages[3].setVelocity(1);
-							//Logger::outputDebugString("Note 1: ");
-							Logger::outputDebugString(std::to_string(midiMessages[3].getNoteNumber()));
 							midiMessages[3].setTimeStamp(time);
 							midiOutput->sendMessageNow(midiMessages[3]);
 							ADSR[3].trigger = 0;
-							firstLoop = false;
 							noteAlreadyOff[3] = false;
 						}
 					}
 				}
 			}
+
+			// If its the fifth column in the sequencer:
 			if (playNoteIndex == 4)
 			{
-				// Turn off the currently playing note:
 				if (noteAlreadyOff[4] == false)
 				{
 					midiMessages[4].noteOff(midiMessages[4].getChannel(), midiMessages[4].getNoteNumber());
 					midiMessages[4].setTimeStamp(time);
 					midiOutput->sendMessageNow(midiMessages[4]);
 				}
-				//===
-				// Reset the envelope trigger:
+
 				ADSR[4].trigger = 1;
 				ADSRout[4] = ADSR[4].adsr(1., ADSR[4].trigger);
-				//Logger::outputDebugString(std::to_string(ADSRout[3]));
 
 				if (skipNote[4] == true)
-				{
-					// Do nothing
-				}
-				else {
+				{} else {
 					for (int i = 0; i < 7; i++)
 					{
 						if (chosenNote[4] == i)
 						{
 							whichNote = key[i];
-							midiMessages[4].noteOn(1, 0, (uint8)100); //(unit8)100
+							midiMessages[4].noteOn(1, 0, (uint8)100); 
 							midiMessages[4].setNoteNumber(key[i] + transposeBy[4]);
-							Logger::outputDebugString(std::to_string(key[i]));
 							midiMessages[4].setVelocity(1);
-							//Logger::outputDebugString("Note 1: ");
-							Logger::outputDebugString(std::to_string(midiMessages[4].getNoteNumber()));
 							midiMessages[4].setTimeStamp(time);
 							midiOutput->sendMessageNow(midiMessages[4]);
 							ADSR[4].trigger = 0;
-							firstLoop = false;
 							noteAlreadyOff[4] = false;
 						}
 					}
@@ -534,26 +458,11 @@ void MainComponent::getNextAudioBlock (const AudioSourceChannelInfo& bufferToFil
 
 		
 			//============
-			// For mono purposes:
-			if (mono == true)
-			{
-				//for (int i = 0; i < 5; i++)
-				//{
-					//ADSRout[i] = ADSR[i].adsr(1., ADSR[i].trigger);
-				//	}
-				//double vel = 127 * ADSRout[playNoteIndex];
-
-				// the vel value rewrites for each no midi note sent, so at the moment we are monophonic. 
-				// to do envelopes you need a different program logic. 
-				//messageOn = MidiMessage::noteOn(1, whichNote, (uint8)(127 * ADSRout[playNoteIndex])); //(unit8)100
-				//messageOn.setTimeStamp(time);
-				//midi.addEvent(messageOn, time);
-				//midiOutput->sendMessageNow(messageOn);
-			}
-			//============
-			//============
+			// Turn off the MIDI event trigger:
 			playNote = false;
+			// Advance through the sequencer
 			playNoteIndex++;
+			// Wrap around
 			if (playNoteIndex >= 5)
 			{
 				playNoteIndex = 0;
@@ -561,15 +470,21 @@ void MainComponent::getNextAudioBlock (const AudioSourceChannelInfo& bufferToFil
 
 		}
 
+		// set the previous square-wave value to the current value:
 		previous_sum = sum;
+
+		// If the graphics buffer has been filled, then trigger the timer callback
+		// and refresh the graphics: 
 		if (index == graphicSize - 1)
 		{
-			nextSineBlockReady1 = true;
+			nextSineBlockReady = true;
 		}
 		//  time will be constantly incrementing, sample by sample
 		time = time + sample;
 	}
 
+	// Update the envelope sustain and release if 
+	// they have been changed by the user:
 	for (int i = 0; i < 5; i++)
 	{
 		ADSR[i].setSustain(envLen);
@@ -588,9 +503,10 @@ void MainComponent::releaseResources()
 //=====================================
 void MainComponent::timerCallback()
 {
-	if (nextSineBlockReady1 == true)
+	// If true, redraw the oscilloscope graphics:
+	if (nextSineBlockReady == true)
 	{
-		nextSineBlockReady1 = false;
+		nextSineBlockReady = false;
 		repaint();
 	}
 }
@@ -602,44 +518,41 @@ void MainComponent::timerCallback()
 //==============================================================================
 void MainComponent::paint (Graphics& g)
 {
-	//Image background = ImageCache::getFromMemory(BinaryData::New_Project_png, BinaryData::New_Project_pngSize);
-	//g.drawImageAt(background, 0, 0);
-	g.fillAll(Colours::whitesmoke);  // yellow
+	g.fillAll(Colours::whitesmoke);  
 	g.fillAll(Colours::transparentBlack);
 
 	g.setColour(Colours::darkslategrey);
 	g.fillRect(0, 0, 800, 600);
 	g.setColour(Colours::whitesmoke);
 	g.fillRect(2.5, 2.5, 795, 595);
-	// background buttons panel:
-	//g.setColour(Colours::darkolivegreen); //darkgoldenrod //palegoldenrod //palegreen // darkseagreen
-	//g.fillRect(515, 53, 250, 210); //
-	//g.fillRect(200, 259, 565, 250);
-	//
 	g.setColour(Colours::darkslategrey);
-	g.fillRect(194, 45, 318, 210); //200
+	g.fillRect(194, 45, 318, 210);
 	g.setColour(Colours::darkgrey);
-	g.fillRect(199, 50, 308, 200); //200
+	g.fillRect(199, 50, 308, 200);
 	drawFrame(g);
 }
 
 //=======================================================
 void MainComponent::resized()
 {
-	// Sliders for first sample:
+	// Sliders for the square-wave frequencies:
 	freq1.setBounds(10, 40, 150, 150);
 	freq2.setBounds(10, 230, 150, 150);
 	freq3.setBounds(10, 420, 150, 150);
+
+	// Speed slider:
 	move_all.setBounds(210, 300, 100, 100);
 
+	// Transposition sliders:
 	for (int i = 0; i < 5; i++)
 	{
 		t_sliders[i]->setBounds(515+(i*50), 230, 50, 100);
 	}
 
+	// Envelope slider:
 	envelopeLength.setBounds(350, 300,50, 100);
 	
-	// Labels:
+	// Sequencer Buttons:
 	for (int i = 0; i < buttonsRow1.size(); ++i)
 	{
 		buttonsRow1[i]->setBounds(520, 60 + (i*25), 40, 20);
@@ -648,10 +561,10 @@ void MainComponent::resized()
 		buttonsRow4[i]->setBounds(520 + (50*3), 60 + (i*25), 40, 20);
 		buttonsRow5[i]->setBounds(520 + (50*4), 60 + (i*25), 40, 20);
 	}
-	// ComboBox:
+
+	// MIDI and Key ComboBox:
 	midiOutputList.setBounds(700, 10, 70, 30);
 	keyOptions.setBounds(600, 10, 70, 30);
-
 }
 
 //=======================================================================
@@ -676,7 +589,9 @@ void MainComponent::drawFrame(Graphics& g)
 		g.drawLine(200.0 + (((i / 10) - 1)), 150.0 - (height_prev * 20), 200.0 + (((i / 10))), 150.0 - (height1 * 20), 5);
 	}
 
-	// Code for flipping the colours of the buttons when on : 
+	// Code for switching the colours of the buttons when on : 
+	// currently the step prior to the one actually playing 
+	// switches colour, so this needs to be fixed:
 	if (playNoteIndex == 0)
 	{
 
@@ -784,35 +699,42 @@ void MainComponent::drawFrame(Graphics& g)
 }
 void MainComponent::buttonClicked(Button* button)
 {
+	// Series of if-else statements that control the toggle-button states. 
+	// Should be made less complex/easy-to-follow-through:
 
-	// should map index to letter
+	// If the button is from sequencer step 1
 	if (buttonsRow1.contains(button))
 	{
+		// If this isn't the very first click during runtime:
 		if(firstButtonClick[0] == false)
 		{ 
-			//
+			// If the button at that index isn't the same one as previously toggled, or it is the same one but we're currently skipping it:
 			if (buttonsRow1.indexOf(button) != previousState[0] || (buttonsRow1.indexOf(button) == previousState[0] && skipNote[0] == true))
 			{
+				// If we haven't already been skipping the note:
 				if (skipNote[0] != true)
 				{
+					// turn the previous step off:
 					buttonsRow1[previousState[0]]->setToggleState(false, dontSendNotification);
 				}
-				else {}; // do nothing
+				// Set the note to be played to the new selected note index:
 				chosenNote[0] = buttonsRow1.indexOf(button);
+				// Set the previously toggled button index to the current one:
 				previousState[0] = buttonsRow1.indexOf(button);
+				// Don't skip the note:
 				skipNote[0] = false;
-			}
-			else { skipNote[0] = true; }
-			//
-		}
-		else {
+
+			} else { skipNote[0] = true; }
+
+		// Else if this is the first time we've selected the sequencer step since runtime start:
+		} else {
 			chosenNote[0] = buttonsRow1.indexOf(button);
 			previousState[0] = buttonsRow1.indexOf(button);
-			//Logger::outputDebugString(std::to_string(previousState[0]));
 			firstButtonClick[0] = false;
 		}
 	}
 
+	// If the button is from sequencer step 2
 	if (buttonsRow2.contains(button))
 	{
 		if (firstButtonClick[1] == false)
@@ -824,7 +746,6 @@ void MainComponent::buttonClicked(Button* button)
 				{
 					buttonsRow2[previousState[1]]->setToggleState(false, dontSendNotification);
 				}
-				else {}; // do nothing
 				chosenNote[1] = buttonsRow2.indexOf(button);
 				previousState[1] = buttonsRow2.indexOf(button);
 				skipNote[1] = false;
@@ -839,6 +760,7 @@ void MainComponent::buttonClicked(Button* button)
 		}
 	}
 
+	// If the button is from sequencer step 3
 	if (buttonsRow3.contains(button))
 	{
 		if (firstButtonClick[2] == false)
@@ -850,7 +772,6 @@ void MainComponent::buttonClicked(Button* button)
 				{
 					buttonsRow3[previousState[2]]->setToggleState(false, dontSendNotification);
 				}
-				else {}; // do nothing
 				chosenNote[2] = buttonsRow3.indexOf(button);
 				previousState[2] = buttonsRow3.indexOf(button);
 				skipNote[2] = false;
@@ -865,6 +786,7 @@ void MainComponent::buttonClicked(Button* button)
 		}
 	}
 
+	// If the button is from sequencer step 4
 	if (buttonsRow4.contains(button))
 	{
 		if (firstButtonClick[3] == false)
@@ -874,7 +796,7 @@ void MainComponent::buttonClicked(Button* button)
 				if (skipNote[3] != true)
 				{
 					buttonsRow4[previousState[3]]->setToggleState(false, dontSendNotification);
-				} else {}; // do nothing
+				} 
 				chosenNote[3] = buttonsRow4.indexOf(button);
 				previousState[3] = buttonsRow4.indexOf(button);
 				skipNote[3] = false; } else { skipNote[3] = true;  }
@@ -888,6 +810,7 @@ void MainComponent::buttonClicked(Button* button)
 		}
 	}
 
+	// If the button is from sequencer step 5
 	if (buttonsRow5.contains(button))
 	{
 		if (firstButtonClick[4] == false)
@@ -898,7 +821,6 @@ void MainComponent::buttonClicked(Button* button)
 				{
 					buttonsRow5[previousState[4]]->setToggleState(false, dontSendNotification);
 				}
-				else {}; // do nothing
 				chosenNote[4] = buttonsRow5.indexOf(button);
 				previousState[4] = buttonsRow5.indexOf(button);
 				skipNote[4] = false;
@@ -914,15 +836,12 @@ void MainComponent::buttonClicked(Button* button)
 }
 
 //=============================================
-void MainComponent::addMessageToBuffer(const MidiMessage& message)
-{
-	auto timestamp = message.getTimeStamp();
-	auto sampleNumber = (int)(timestamp * 44100);
-	midiBuffer.addEvent(message, sampleNumber);
-}
+
 
 void MainComponent::sliderValueChanged(Slider* slider)
 {
+	// Define the behaviour of the transpose sliders:
+	// i.e. assign the values to the transposeBy variables. 
 	for (int i = 0; i < 5; i++)
 	{
 		if (slider == t_sliders[i])
@@ -934,6 +853,8 @@ void MainComponent::sliderValueChanged(Slider* slider)
 
 void MainComponent::sliderDragEnded(Slider* slider)
 {
+	// Define the behaviour of the speed slider:
+	// i.e. multiply the current frequencies:
 	double multiplyBy = move_all.getValue();
 		f1 = freq1.getValue();
 		f1 *= multiplyBy;
@@ -946,9 +867,9 @@ void MainComponent::sliderDragEnded(Slider* slider)
 //==================================================
 void MainComponent::styleMenuChanged()
 {
+	// Define the behaviour for the Key selection Combo Box:
 	for (int i = 0; i < 7; i++)
 	{
 		key[i] = scaleRef.scalesMajor[keyOptions.getSelectedItemIndex()][i];
-		Logger::outputDebugString(to_string(key[i]));
 	}
 }
