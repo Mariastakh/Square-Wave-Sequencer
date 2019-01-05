@@ -497,7 +497,20 @@ void MainComponent::releaseResources()
     // This will be called when the audio device stops, or when it is being
     // restarted due to a setting change.
 
-    // For more details, see the help for AudioProcessor::releaseResources()
+    // Send MIDI note events for all notes, so we have no hanging notes after
+    // we close the software. Update: this doesn't work. 
+	
+	for (int i = 0; i < 5; i++)
+	{
+		ADSR[i].trigger = 0;
+
+			midiMessages[i].noteOff(midiMessages[i].getChannel(), midiMessages[i].getNoteNumber());
+			midiMessages[i].setVelocity(0);
+			midiOutput->sendMessageNow(midiMessages[i]);
+			noteAlreadyOff[i] = true;
+		
+	}
+	delete midiOutput;
 }
 
 //=====================================
