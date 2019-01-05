@@ -178,7 +178,7 @@ private:
 	Oscillator scaleRef;
 	vector<int> key;
 
-	// Graphics:
+	// Oscilloscope Graphics:
 	vector<double> sineBuffer;
 	vector<double> bigSineBuffer;
 	int graphicSize;
